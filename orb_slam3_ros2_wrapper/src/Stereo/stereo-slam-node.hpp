@@ -14,6 +14,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <nav_msgs/msg/path.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
@@ -48,7 +49,8 @@ namespace ORB_SLAM3_Wrapper
 
     private:
         typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image> approximate_sync_policy;
-
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+        nav_msgs::msg::Path path_;
         // ROS 2 Callbacks.
         void ImuCallback(const sensor_msgs::msg::Imu::SharedPtr msgIMU);
         void OdomCallback(const nav_msgs::msg::Odometry::SharedPtr msgOdom);

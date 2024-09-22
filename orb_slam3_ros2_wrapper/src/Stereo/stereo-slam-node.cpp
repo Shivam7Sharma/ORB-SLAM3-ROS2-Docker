@@ -28,6 +28,8 @@ namespace ORB_SLAM3_Wrapper
         imuSub_ = this->create_subscription<sensor_msgs::msg::Imu>(this->get_parameter("imu_topic_name").as_string(), 1000, std::bind(&StereoSlamNode::ImuCallback, this, std::placeholders::_1));
         odomSub_ = this->create_subscription<nav_msgs::msg::Odometry>(this->get_parameter("odom_topic_name").as_string(), 1000, std::bind(&StereoSlamNode::OdomCallback, this, std::placeholders::_1));
         // ROS Publishers
+
+        path_pub_ = this->create_publisher<nav_msgs::msg::Path>("orb_slam3/camera_path", 10);
         mapDataPub_ = this->create_publisher<slam_msgs::msg::MapData>("map_data", 10);
         mapPointsPub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("map_points", 10);
         visibleLandmarksPub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("visible_landmarks", 10);
@@ -58,10 +60,10 @@ namespace ORB_SLAM3_Wrapper
         this->declare_parameter("odom_frame", "odom");
         this->get_parameter("odom_frame", odom_frame_id_);
 
-        this->declare_parameter("robot_x", rclcpp::ParameterValue(1.0));
+        this->declare_parameter("robot_x", rclcpp::ParameterValue(0.0));
         this->get_parameter("robot_x", robot_x_);
 
-        this->declare_parameter("robot_y", rclcpp::ParameterValue(1.0));
+        this->declare_parameter("robot_y", rclcpp::ParameterValue(0.0));
         this->get_parameter("robot_y", robot_y_);
 
         this->declare_parameter("no_odometry_mode", rclcpp::ParameterValue(true));
@@ -123,25 +125,41 @@ namespace ORB_SLAM3_Wrapper
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 4000, "Odometry msg recorded but no odometry mode is true, set to false to use this odometry");
     }
 
-    void StereoSlamNode::StereoCallback(const sensor_msgs::msg::Image::SharedPtr msgLeft, const sensor_msgs::msg::Image::SharedPtr msgRight)
+    void StereoSlamNode::StereoCallback(const sensor_msgs::msg::Image::SharedPtr msgLeft,
+                                        const sensor_msgs::msg::Image::SharedPtr msgRight)
     {
         Sophus::SE3f Tcw;
-        // print to consolse using ros2 logger that this function is running
         RCLCPP_INFO(this->get_logger(), "StereoCallback");
-        // also do cout
         std::cout << "StereoCallback" << std::endl;
+
         if (interface_->trackStereo(msgLeft, msgRight, Tcw))
-        { // check if tracked
+        {
             RCLCPP_INFO(this->get_logger(), "Tracked!");
-            // also do cout
             std::cout << "Tracked!" << std::endl;
             isTracked_ = true;
+
             if (publish_tf_)
             {
                 if (no_odometry_mode_)
+                {
                     interface_->getDirectMapToRobotTF(msgLeft->header, tfMapOdom_);
-                tfBroadcaster_->sendTransform(tfMapOdom_);
+                    tfBroadcaster_->sendTransform(tfMapOdom_);
+
+                    // Update and publish path
+                    geometry_msgs::msg::PoseStamped pose_stamped;
+                    pose_stamped.header = msgLeft->header;
+                    pose_stamped.header.frame_id = global_frame_;
+                    pose_stamped.pose.position.x = tfMapOdom_.transform.translation.x;
+                    pose_stamped.pose.position.y = tfMapOdom_.transform.translation.y;
+                    pose_stamped.pose.position.z = tfMapOdom_.transform.translation.z;
+                    pose_stamped.pose.orientation = tfMapOdom_.transform.rotation;
+
+                    path_.header = pose_stamped.header;
+                    path_.poses.push_back(pose_stamped);
+                    path_pub_->publish(path_);
+                }
             }
+
             ++frequency_tracker_count_;
         }
     }
